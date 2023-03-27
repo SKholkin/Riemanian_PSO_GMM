@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 from math import copysign, hypot
 from sklearn.datasets import load_digits
+from sklearn.mixture import GaussianMixture
 
 real_dataset_names = ['breast_cancer', 'cloud']
 
@@ -83,3 +84,36 @@ def load_dataset(dataset_name):
     if osp.isfile(dataset_name):
         return load_synthetic_dataset(dataset_name)
     raise RuntimeError(f'Unknown dataset {dataset_name}. Please provide path to synthetic dataset file or correctly write real dataset name')
+
+
+from particle import GMMState
+from eigen_param_helper import to_linear, to_manifold
+from copy import deepcopy
+def init_gmm_via_delta(params, data):
+    n_iter = params['em_init_iters']
+    gmm = GaussianMixture(n_components=params['n_comp'], covariance_type='full', n_init=params['n_particles'], max_iter=n_iter, init_params='k-means++')
+    gmm.fit(data)
+    print('Basic GMM score:', gmm.score(data))
+    gmm_state = GMMState(gmm)
+    ret_val = []
+    for i in range(params['n_particles']):
+        gmm_state_copy = deepcopy(gmm_state)
+        gmm_spectral_state = to_linear(gmm_state_copy)
+        # print(gmm_spectral_state.eigvals)
+        gmm_spectral_state.scatter(0.03)
+
+        ret_val.append(to_manifold(gmm_spectral_state))
+
+    return ret_val
+
+if __name__ == '__main__':
+    params = {'n_comp': 10, 'n_particles': 50, 'steps': 5, 
+              'mu': 0, 'r_1': 0.5, 'r_2': 0.8,
+               'r_1_w': 0.42, 'r_2_w': 0.57, 'em_init_iters': 100}
+    
+    data = load_dataset('cloud')
+    from particle import Particle
+    list_of_gmmstates = init_gmm_via_delta(params, data)
+    print([Particle(item, params).get_ll(data) for item in list_of_gmmstates])
+    # print(list_of_gmmstates[0].precisions)
+    

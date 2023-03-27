@@ -17,7 +17,6 @@ def eigh_with_fixed_direction_range(spd_matr):
 
     return eigenvalues, v
 
-
 class GMMStateSpectral:
     def __init__(self, means, weights, eigvals, rotations) -> None:
         self.means = means
@@ -37,7 +36,6 @@ class GMMStateSpectral:
         self.means += delta_means
         self.rotations += delta_givens
         self.eigvals += delta_eigvals
-        
 
 
 def to_linear(gmm_state: GMMState):

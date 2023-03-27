@@ -14,19 +14,19 @@ class GMMState:
 
     def zeros_like(self):
         gmm_state_dict = {'means_': np.zeros_like(self.means),
-                          'weights_': np.zeros_like(self.weights), 'precisions_': self.precisions_}
+                          'weights_': np.zeros_like(self.weights), 'precisions_': self.precisions}
         return GMMState(SimpleNamespace(**gmm_state_dict))
     
     def log_spd(self, Sigma):
         copy = deepcopy(self)
         for i in range(self.n_comp):
-            copy.precisions[i] = SPDManifold.Log(Sigma, copy.precisions[i])
+            copy.precisions[i] = SPDManifold.Log(Sigma[i], copy.precisions[i])
         return copy
     
     def exp_spd(self, Sigma):
         copy = deepcopy(self)
         for i in range(self.n_comp):
-            copy.precisions[i] = SPDManifold.Exp(Sigma, copy.precisions[i])
+            copy.precisions[i] = SPDManifold.Exp(Sigma[i], copy.precisions[i])
         return copy
     
     def __add__(self, gmm_2):
@@ -41,24 +41,48 @@ class Particle:
         self.mu = pso_params['mu']
         self.r_1, self.r_2 = pso_params['r_1'], pso_params['r_2']
         self.r_1_w, self.r_2_w = pso_params['r_1_w'], pso_params['r_2_w']
-        self.position = GMMState(init_gmm)
-        self.velocity = self.position.zeros_like()
-        self.PB = GMMState(init_gmm)
-        self.GB = GMMState(init_gmm)
+        if isinstance(init_gmm, GMMState):
+            self.position = deepcopy(init_gmm)
+            self.velocity = self.position.zeros_like()
+            self.PB = deepcopy(init_gmm)
+            self.GB = deepcopy(init_gmm)
+
+            # self.position = GMMState(init_gmm)
+            # self.velocity = self.position.zeros_like()
+            # self.PB = GMMState(init_gmm)
+            # self.GB = GMMState(init_gmm)
+
+        self.n_comp = self.position.weights.shape[0]
 
     def set_GB(self, GB: GMMState):
         self.GB = GB
 
     def run_em(self, data):
-        raise NotImplementedError
+
+        gmm = GaussianMixture(n_components=self.position.weights.shape[0], covariance_type='full', weights_init=self.position.weights, means_init=self.position.means, precisions_init=self.position.precisions, max_iter=100)
+
+        cholesky = np.zeros_like(self.position.precisions)
+        
+        for i in range(self.n_comp):
+            cholesky[i] = np.linalg.cholesky(self.position.precisions[i])
+
+        gmm.weights_ = self.position.weights
+        gmm.means_ = self.position.means
+        gmm.precisions_cholesky_ = cholesky
+        gmm.fit(data)
+
+        new_gmm_state = GMMState(gmm)
+        self.position = new_gmm_state
 
     def step(self):
-        velocity_projected = self.velocity.log_spd()
-        pb_projected = self.PB.log_spd()
-        gb_projected = self.GB.log_spd()
-        self._step_euclidian(velocity_projected, pb_projected, gb_projected)
-        self.position = self.position + self.velocity
-        self.position = self.position.exp_spd()
+        velocity_projected = self.velocity.log_spd(self.position.precisions)
+        pb_projected = self.PB.log_spd(self.position.precisions)
+        gb_projected = self.GB.log_spd(self.position.precisions)
+        position_projected = self.position.log_spd(self.position.precisions)
+        velocity_projected = self._step_euclidian(position_projected, velocity_projected, pb_projected, gb_projected)
+        new_position_projected = position_projected + velocity_projected
+        self.position = new_position_projected.exp_spd(self.position.precisions)
+
 
     def get_ll(self, data):
 
@@ -66,7 +90,7 @@ class Particle:
 
         cholesky = np.zeros_like(self.position.precisions)
         
-        for i in range(self.n_components):
+        for i in range(self.n_comp):
             cholesky[i] = np.linalg.cholesky(self.position.precisions[i])
 
         gmm.weights_ = self.position.weights
@@ -75,9 +99,10 @@ class Particle:
 
         return gmm.score(data)
 
-    def _step_euclidian(self, velocity, PB, GB):
+    def _step_euclidian(self, position, velocity, PB, GB):
         c_1 = np.random.uniform(0, 1)
         c_2 = np.random.uniform(0, 1)
-        self.velocity.weights = self.mu * velocity.weights + c_1 * self.r_1_w * (PB.weights - self.position.weights) +c_2 * self.r_2_w * (GB.weights - self.position.weights)
-        self.velocity.means = self.mu * velocity.means + c_1 * self.r_1 * (PB.means - self.position.means) +c_2 * self.r_2 * (GB.means - self.position.means)
-        self.velocity.precisions = self.mu * velocity.precisions + c_1 * self.r_1 * (PB.precisions - self.position.precisions) +c_2 * self.r_2 * (GB.precisions - self.position.precisions)   
+        velocity.weights = self.mu * velocity.weights + c_1 * self.r_1_w * (PB.weights - position.weights) +c_2 * self.r_2_w * (GB.weights - position.weights)
+        velocity.means = self.mu * velocity.means + c_1 * self.r_1 * (PB.means - position.means) +c_2 * self.r_2 * (GB.means - position.means)
+        velocity.precisions = self.mu * velocity.precisions + c_1 * self.r_1 * (PB.precisions - position.precisions) +c_2 * self.r_2 * (GB.precisions - position.precisions)   
+        return velocity

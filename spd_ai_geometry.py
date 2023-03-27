@@ -22,20 +22,20 @@ class SPDManifold:
     @staticmethod
     def spd_pos_neg_sqrt(Sigma):
         eigval, eigvec = eigh(Sigma)
-        eigvals_neg_sqrt, eigvals_pos_sqrt = np.sqrt(eigval),  np.inv(np.sqrt(eigval))
-        return eigvec @ eigvals_pos_sqrt @ eigvec.T, eigvec @ eigvals_neg_sqrt @ eigvec.T 
+        eigvals_neg_sqrt, eigvals_pos_sqrt = np.sqrt(eigval),  1 / np.sqrt(eigval)
+        return eigvec @ np.diag(eigvals_pos_sqrt) @ eigvec.T, eigvec @ np.diag(eigvals_neg_sqrt) @ eigvec.T 
     
     @staticmethod
     def spd_exp(Sigma):
         eigval, eigvec = eigh(Sigma)
         exp_eigvals = np.exp(eigval)
-        return eigvec @ exp_eigvals @ eigvec.T
+        return eigvec @ np.diag(exp_eigvals) @ eigvec.T
 
     @staticmethod
     def spd_log(Sigma):
         eigval, eigvec = eigh(Sigma)
         log_eigvals = np.log(eigval)
-        return eigvec @ log_eigvals @ eigvec.T
+        return eigvec @ np.diag(log_eigvals) @ eigvec.T
 
 
 
